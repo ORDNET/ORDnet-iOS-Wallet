@@ -1,10 +1,17 @@
-# ORDnet Wallet — iOS app (v2.6.2)
+# ORDnet Wallet — iOS app (v2.7.0)
 
 Full native iOS version of the **ORDnet Web3 Browser / ORD/net Wallet**
 (originally the ORD/plug Chrome extension). Not a wrapper: the entire UI is
-SwiftUI; only the proven crypto engine (`bsv.min.js` + `wallet-core.js`)
-runs invisibly inside Apple's JavaScriptCore, so every transaction is
-byte-for-byte identical to the extension.
+SwiftUI; the crypto engine (`bsv.min.js` + `wallet-core.js`) runs invisibly
+inside Apple's JavaScriptCore.
+
+On the engine: `wallet-core.js`, `bsv.min.js` and `bsv-sdk-bundle.js` are
+**byte-identical to the Android app's copies**, and the two vendored libraries
+are byte-identical to the Chrome extension's as well. The extension does not
+use `wallet-core.js` — its wallet logic is a separate implementation in
+`src/wallet.js`. So transactions built here are byte-for-byte identical to the
+Android app's; against the extension the shared ground is the vendored
+libraries and a common set of conformance vectors, not the same file.
 
 ## Requirements
 
@@ -27,7 +34,7 @@ byte-for-byte identical to the extension.
 | Layer | Technology | Origin |
 |---|---|---|
 | UI | 100% native SwiftUI | new, 1-to-1 port of the wallet.html/viewer.html flows |
-| Crypto engine | `bsv.min.js` + `wallet-core.js` in JavaScriptCore (no WebView) | identical to the extension: fees, tx building, BIP39/44, atomic swaps |
+| Crypto engine | `bsv.min.js` + `wallet-core.js` in JavaScriptCore (no WebView) | **byte-identical to Android**; shares the vendored libraries and conformance vectors with the extension |
 | Key storage | iOS Keychain (Secure Enclave) + Face ID | replaces the PBKDF2/AES-GCM password vault |
 | Networking | URLSession (WhatsOnChain, bsvmap.io, domains.ordnet.io) | same endpoints, incl. 429 backoff and tx-hex cache |
 | .web3 browser | WKWebView + WKURLSchemeHandler (`ordweb3://`) | replaces the service-worker router (sw.js) |

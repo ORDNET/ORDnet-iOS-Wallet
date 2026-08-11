@@ -200,9 +200,23 @@ final class BrowserModel: NSObject, ObservableObject {
         if !pendingFragment.isEmpty {
             let frag = pendingFragment
             pendingFragment = ""
+            // H5 (external audit, 11 Aug 2026) — the fragment comes from a
+            // page-posted `ordnetNavigate` message, so it is attacker
+            // controlled. It used to be interpolated raw into a single-quoted
+            // JS string, so a `'` in the fragment closed the string and ran
+            // arbitrary JS in the page's origin (address spoofing on the next
+            // ordplug.pay, cross-origin script execution). Android escaped it
+            // here; iOS did not. Escape backslash, quote and the U+2028/U+2029
+            // line separators (raw newlines inside a JS string literal) to
+            // match, so the value can only ever be data.
+            let safeFrag = frag
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+                .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 let js = """
-                (function(){ try{ var id=decodeURIComponent('\(frag)'.substring(1));
+                (function(){ try{ var id=decodeURIComponent('\(safeFrag)'.substring(1));
                 var el=document.getElementById(id)||document.querySelector('[name="'+id+'"]');
                 if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} })();
                 """
@@ -241,6 +255,15 @@ final class BrowserModel: NSObject, ObservableObject {
             }
             return
         }
+        // Drift fix (external audit, 11 Aug 2026) — one approval sheet at a
+        // time. A second request must NOT silently replace the first: doing so
+        // orphaned the first request's callback until the dApp's timeout.
+        // Android already rejected the newcomer; match it.
+        if store.pendingProviderRequest != nil {
+            deliver(id: id, ok: false, result: nil,
+                    error: "Another ORDnet Wallet request is already awaiting approval — approve or dismiss it first.")
+            return
+        }
         OrdplugProvider.pendingDelivery[id] = { [weak self] ok, result, err in
             self?.deliver(id: id, ok: ok, result: result, error: err)
         }
@@ -252,7 +275,15 @@ final class BrowserModel: NSObject, ObservableObject {
     func handleBrc100Message(_ body: [String: Any]) {
         guard let id = body["id"] as? String, let method = body["method"] as? String else { return }
         let argsJson = body["args"] as? String ?? "{}"
-        let originator = body["originator"] as? String ?? ""
+        // H4 (external audit, 11 Aug 2026) — the originator MUST be the real
+        // origin of the page, not a value the page hands us. Grants and daily
+        // budgets key on `address|origin|level|protocol`, so a page that
+        // supplied `originator: "https://trusted.dapp"` used to inherit that
+        // dApp's grants and budget. The window.ordplug path already derives
+        // the origin natively (currentOrigin); the BRC-100 path trusted
+        // body["originator"]. Use currentOrigin here too and ignore the
+        // page-supplied field entirely.
+        let originator = currentOrigin
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -275,7 +306,14 @@ final class BrowserModel: NSObject, ObservableObject {
         if let error { payload["error"] = ["name": error.name, "code": error.code, "message": error.message] }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("window.__brc100Deliver(\(json));")
+        // JSONSerialization emits valid JSON, but JSON permits raw U+2028/U+2029,
+        // which are illegal inside a JS string literal and would break (or be
+        // exploitable in) `__brc100Deliver(<json>)`. Android escapes them here;
+        // match it.
+        let safeJson = json
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        webView.evaluateJavaScript("window.__brc100Deliver(\(safeJson));")
     }
 
     func deliver(id: String, ok: Bool, result: [String: Any]?, error: String?) {
@@ -284,7 +322,10 @@ final class BrowserModel: NSObject, ObservableObject {
         if let error { payload["error"] = error }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("window.__ordplugDeliver(\(json));")
+        let safeJson = json
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        webView.evaluateJavaScript("window.__ordplugDeliver(\(safeJson));")
     }
 }
 

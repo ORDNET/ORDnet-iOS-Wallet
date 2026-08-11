@@ -73,11 +73,11 @@ enum Brc100 {
         case "internalizeAction":
             return try await internalizeAction(argsJson: argsJson, originator: originator, store: store)
         case "listActions":
-            return try listActions(argsJson: argsJson, store: store)
+            return try await listActions(argsJson: argsJson, originator: originator, store: store)
         case "listOutputs":
-            return try await listOutputs(argsJson: argsJson, store: store)
+            return try await listOutputs(argsJson: argsJson, originator: originator, store: store)
         case "relinquishOutput":
-            return try await relinquishOutput(argsJson: argsJson, store: store)
+            return try await relinquishOutput(argsJson: argsJson, originator: originator, store: store)
         case "signAction":
             // regel 1: het signableTransaction-pad bestaat pas als het er ECHT is
             throw Err(name: "WERR_UNSUPPORTED_ACTION", code: 2,
@@ -225,8 +225,9 @@ enum Brc100 {
     /// listActions uit het lokale actielog (alleen acties via deze app —
     /// gedocumenteerde, eerlijke scope; filters conform BRC-100 any/all)
     @MainActor
-    private static func listActions(argsJson: String, store: WalletStore?) throws -> [String: Any] {
+    private static func listActions(argsJson: String, originator: String, store: WalletStore?) async throws -> [String: Any] {
         let store = try unlockedStore(store)
+        try await store.requireBrc100ReadConsent(origin: originator, method: "listActions") // H7
         let args = (try? JSONSerialization.jsonObject(with: Data(argsJson.utf8))) as? [String: Any] ?? [:]
         var actions = store.brc100Actions()
         if let labels = args["labels"] as? [String], !labels.isEmpty {
@@ -262,8 +263,9 @@ enum Brc100 {
     /// listOutputs over de live, ordinal-beschermde UTXO-set ('default'
     /// basket) — vreemde baskets/tags weigeren expliciet in de engine
     @MainActor
-    private static func listOutputs(argsJson: String, store: WalletStore?) async throws -> [String: Any] {
+    private static func listOutputs(argsJson: String, originator: String, store: WalletStore?) async throws -> [String: Any] {
         let store = try unlockedStore(store)
+        try await store.requireBrc100ReadConsent(origin: originator, method: "listOutputs") // H7
         let utxos = try await store.utxos()
         let utxosJson = String(data: try JSONSerialization.data(withJSONObject: utxos), encoding: .utf8) ?? "[]"
         let v = try requireValid(try store.engine.dict("brc100ListOutputs",
@@ -275,7 +277,7 @@ enum Brc100 {
     /// relinquishOutput: bestaand outpoint uit de 'default' basket loslaten —
     /// persistent uitgesloten van funding; onbekende outpoints weigeren
     @MainActor
-    private static func relinquishOutput(argsJson: String, store: WalletStore?) async throws -> [String: Any] {
+    private static func relinquishOutput(argsJson: String, originator: String, store: WalletStore?) async throws -> [String: Any] {
         let store = try unlockedStore(store)
         let args = (try? JSONSerialization.jsonObject(with: Data(argsJson.utf8))) as? [String: Any] ?? [:]
         let basket = (args["basket"] as? String) ?? "default"
@@ -294,6 +296,7 @@ enum Brc100 {
             throw Err(name: "WERR_INVALID_PARAMETER", code: 3,
                       message: "relinquishOutput: outpoint \(outpoint) is not a spendable output of this wallet.")
         }
+        try await store.requireBrc100Relinquish(origin: originator, outpoint: outpoint) // H7 — destructive, per-call confirm
         store.brc100Relinquish(outpoint: outpoint)
         return ["relinquished": true]
     }

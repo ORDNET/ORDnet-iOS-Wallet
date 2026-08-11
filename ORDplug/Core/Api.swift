@@ -185,9 +185,14 @@ enum Api {
     }
 
     /// global listings registry — merged into holdings like mergeListings()
-    static func listings() async -> [[String: Any]] {
+    static func listings() async -> [[String: Any]]? {
+        // Drift fix (external audit, 11 Aug 2026): return nil on an unreachable
+        // registry so callers can tell "down" from "genuinely empty". Android's
+        // Api.listings() already did this; iOS returned [] for both, so
+        // registryDistricts() had to lean on a DIFFERENT endpoint's health flag
+        // (indexerOk) and misread a failed fetch as an empty registry.
         guard let (code, data) = try? await get(holdingsBase + "/listings"), code == 200,
-              let j = json(data) else { return [] }
+              let j = json(data) else { return nil }
         return j["listings"] as? [[String: Any]] ?? []
     }
 

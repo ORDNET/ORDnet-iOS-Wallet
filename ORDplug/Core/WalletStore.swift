@@ -230,12 +230,31 @@ final class WalletStore: ObservableObject {
         holdings = []
         sessionPhrases = [:]
         connectedSites = [:]
-        // wipe app data tied to the removed wallet — nothing stays behind
+        // wipe app data tied to the removed wallet — nothing stays behind.
+        // Drift fix (external audit, 11 Aug 2026): iOS wiped the address book
+        // and inscription log but NOT the BRC-100 stores, so grants, the action
+        // log and relinquished outpoints survived a wallet removal and could be
+        // inherited by the next wallet set up on the device. Android already
+        // cleared all of these; match it.
         addressBook = []
         inscriptions = []
         allInscriptions = [:]
-        UserDefaults.standard.removeObject(forKey: Self.addressBookKey)
-        UserDefaults.standard.removeObject(forKey: Self.inscriptionsKey)
+        chainTips = [:]
+        spentGuard = [:]
+        let d = UserDefaults.standard
+        d.removeObject(forKey: Self.addressBookKey)
+        d.removeObject(forKey: Self.inscriptionsKey)
+        d.removeObject(forKey: Self.chainTipsKey)
+        d.removeObject(forKey: Self.spentGuardKey)
+        d.removeObject(forKey: Self.brc100GrantsKey)
+        d.removeObject(forKey: Self.brc100ActionsKey)
+        d.removeObject(forKey: Self.brc100RelinquishedKey)
+        // cancel anything waiting on the user
+        pendingBrc100Permission?.continuation.resume(returning: false)
+        pendingBrc100Permission = nil
+        pendingBrc100TxConfirm?.continuation.resume(returning: false)
+        pendingBrc100TxConfirm = nil
+        engine.brc100Reset()
         phase = .setup
     }
 
@@ -347,9 +366,18 @@ final class WalletStore: ObservableObject {
     func removeAccount(_ i: Int) {
         guard accounts.count > 1, accounts.indices.contains(i) else { return }
         accounts.remove(at: i)
-        if active >= accounts.count { active = accounts.count - 1 }
-        if active == i { active = max(0, i - 1) }
-        active = min(active, accounts.count - 1)
+        // Keep `active` pointing at the SAME account after the indices shift.
+        // Drift fix (external audit, 11 Aug 2026): iOS handled the removed-active
+        // case but NOT the "removed an account BEFORE the active one" case, so
+        // removing an earlier account silently switched the wallet to a
+        // different account's keys. Android already had this (with the comment);
+        // match it exactly.
+        switch true {
+        case i < active: active -= 1
+        case i == active: active = max(0, i - 1)
+        default: break
+        }
+        active = min(max(active, 0), accounts.count - 1)
         try? saveAccounts()
     }
 
@@ -493,6 +521,45 @@ final class WalletStore: ObservableObject {
         brc100Grants = g
     }
 
+    /// H7 (external audit, 11 Aug 2026) — listActions / listOutputs leak
+    /// private data (history / all UTXOs) and carried no protocolID to gate on,
+    /// so they ran ungated: one page visit read the whole wallet. Dedicated
+    /// per-origin consent (persistent grant, revocable in Settings).
+    func requireBrc100ReadConsent(origin: String, method: String) async throws {
+        let grantKey = "\(address)|\(origin)|read|\(method)"
+        if brc100Grants.contains(grantKey) { return }
+        let title = method == "listActions" ? "Share transaction history" : "Share wallet outputs"
+        let detail = method == "listActions"
+            ? "The app asks to read this wallet's BRC-100 action history."
+            : "The app asks to list this wallet's spendable outputs (UTXOs)."
+        let approved = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            pendingBrc100Permission = Brc100PermissionRequest(
+                origin: origin.isEmpty ? "unknown app" : origin,
+                title: title, detail: detail, continuation: cont)
+        }
+        guard approved else {
+            throw Brc100.Err(name: "WERR_PERMISSION_DENIED", code: 1,
+                             message: "The user denied \(title.lowercased()) for \(origin).")
+        }
+        var g = brc100Grants
+        g.insert(grantKey)
+        brc100Grants = g
+    }
+
+    /// H7 — relinquishOutput permanently removes an output from funding. It is
+    /// destructive and loopable, so it requires a fresh Face ID / passcode
+    /// confirmation per call (money-grade, never a persistent grant), naming
+    /// the outpoint.
+    func requireBrc100Relinquish(origin: String, outpoint: String) async throws {
+        do {
+            try await Keychain.authenticate(
+                reason: "\(origin) wants to drop \(outpoint) from this wallet. It will no longer be spendable here.")
+        } catch {
+            throw Brc100.Err(name: "WERR_PERMISSION_DENIED", code: 1,
+                             message: "The user did not confirm relinquishing \(outpoint).")
+        }
+    }
+
     // MARK: - BRC-100 grants manager (v2.6, Settings)
 
     /// decode the stored grant keys for the ACTIVE address into rows the
@@ -630,7 +697,7 @@ final class WalletStore: ObservableObject {
             var h = try await Api.holdings(address: address)
             indexerOk = true
             // mergeListings(): the global registry knows listed items the indexer doesn't
-            let listings = await Api.listings()
+            let listings = await Api.listings() ?? []
             let mine = listings.filter { ($0["sellerAddress"] as? String) == address }
             if !mine.isEmpty {
                 var byDistrict: [String: [String: Any]] = [:]
@@ -912,11 +979,19 @@ final class WalletStore: ObservableObject {
 
     /// districts of THIS address present in the global registry — nil if unreachable
     private func registryDistricts() async -> Set<String>? {
-        let ls = await Api.listings()
-        guard !ls.isEmpty || indexerOk else { return nil }
+        // Api.listings() itself signals unreachable with nil now; previously
+        // this leaned on indexerOk — the health flag of a DIFFERENT endpoint —
+        // so a failed listings fetch was misread as "registry is empty".
+        guard let ls = await Api.listings() else { return nil }
         var set = Set<String>()
         for l in ls where (l["sellerAddress"] as? String) == address {
-            if let d = l["district"] { set.insert(String(describing: d)) }
+            if let d = l["district"] {
+                // normalize numeric keys ("17.0" → "17") so they match
+                // Holding.district — same normalization as the merge path
+                if let n = d as? Double { set.insert(String(Int(n))) }
+                else if let n = d as? Int { set.insert(String(n)) }
+                else { set.insert(String(describing: d)) }
+            }
         }
         return set
     }

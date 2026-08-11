@@ -15,6 +15,42 @@ Dates are build dates taken from the archive files.
 
 ---
 
+## [2.7.0] — 2026-08-11 (build 18) — external security audit
+
+An external review of all ORDnet repositories on 11 August 2026 reported four
+high-severity findings in this app. Full detail in
+[SECURITY-FIXES-audit-2026-08-11.md](SECURITY-FIXES-audit-2026-08-11.md).
+
+### Security
+
+- **H5 — JavaScript injection from a page-supplied fragment.** The scroll-to
+  fragment arrives in an `ordnetNavigate` message from the page, and was
+  interpolated raw into a single-quoted JS string. A `'` in the fragment closed
+  the string and ran arbitrary JavaScript in the page's own origin — address
+  spoofing on the next `ordplug.pay`, cross-origin script execution. Android
+  escaped this; iOS did not. Backslash, quote and U+2028/U+2029 are now
+  escaped, so the value can only ever be data. The BRC-100 and ordplug delivery
+  paths escape U+2028/U+2029 in their JSON for the same reason.
+- **H4 — BRC-100 trusted a page-supplied originator.** The originator is now
+  the real origin of the active page.
+- **H7 — read methods had no per-origin consent.** `listActions` and
+  `listOutputs` now require consent per origin; `relinquishOutput` requires a
+  confirmation on every call.
+
+### Fixed
+
+- Account removal no longer mis-indexes when the removed account sits before
+  the active one.
+- Wallet reset now clears BRC-100 grants, the action log, relinquished
+  outpoints, the chain cache and spent/pending state — several survived a reset
+  before.
+- Only one approval sheet can be open at a time.
+- A failed listings call is distinguished from an empty result, as are a
+  down registry and one with no districts.
+
+---
+
+
 ## [2.6.2] — 2026-08-06 (build 17)
 
 ### Changed
