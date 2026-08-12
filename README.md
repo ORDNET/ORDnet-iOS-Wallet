@@ -80,8 +80,11 @@ its main domain **domains.ordnet.io** (since v2.0.0).
   inscribe, signMessage, purchase (ORDPAY), listOrdinal, buyOrdinal,
   sendTx (350 outputs max) — with native approval sheets and
   connected-sites management
-- Service fees (3,996 sats across 11 addresses) and fee rate
-  (0.15 sat/byte) identical to the extension
+- Service fees (**3,996 sats** across 11 outputs to 10 addresses) and fee
+  rate (0.15 sat/byte) identical to the extension and the Android app. The
+  MCP server and ORDmail run a deliberately reduced **agent tier** at one
+  tenth of this (396 sats over the same split), because an agent inscribes
+  far more often than a person does.
 - Auto-lock (5/15/60 min or never), lock button, wallet removal with
   double confirmation
 
@@ -99,7 +102,7 @@ node Tests/engine-tests.mjs
 
 ## App Store submission
 
-- Version: 2.0.0 (see `CHANGELOG.md` for the full history v1.0 → v2.0.0)
+- Version: 2.7.0 (build 18) — see `CHANGELOG.md` for the full history v1.0 → v2.7.0
 - `PrivacyInfo.xcprivacy` present (no tracking, no data collection,
   UserDefaults/CA92.1)
 - Export compliance pre-answered (`ITSAppUsesNonExemptEncryption = NO`)
