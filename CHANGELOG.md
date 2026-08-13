@@ -15,6 +15,30 @@ Dates are build dates taken from the archive files.
 
 ---
 
+## [2.7.1] — 2026-08-13 (build 19) — audit round 2
+
+Second round of the external review: one finding, the most serious in the
+review and the smallest fix in the release. Full detail in
+[SECURITY-FIXES-v2.7.1.md](SECURITY-FIXES-v2.7.1.md).
+
+### Security
+
+- **The only entropy source discarded its return status.** The Swift block
+  backing `crypto.getRandomValues` ignored the result of
+  `SecRandomCopyBytes`; on failure the buffer stayed all-zero and the user
+  received — silently — the all-zero seed: the wallet whose mnemonic is
+  `abandon abandon … about` and whose private keys are public knowledge.
+  Now a `guard … == errSecSuccess else { fatalError(…) }`: a wallet that
+  cannot obtain randomness must not produce key material, and crashing is the
+  only acceptable behaviour. It is the only `SecRandomCopyBytes` call in the
+  codebase.
+
+### Still open
+
+- Native test coverage: the 69 tests are all JavaScript engine tests; the
+  vault, biometric flow, WebView bridges and origin handling have no XCTests
+  yet. Tracked as an issue.
+
 ## [2.7.0] — 2026-08-11 (build 18) — external security audit
 
 An external review of all ORDnet repositories on 11 August 2026 reported four

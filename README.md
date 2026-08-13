@@ -102,7 +102,7 @@ node Tests/engine-tests.mjs
 
 ## App Store submission
 
-- Version: 2.7.1 (build 19) — see `CHANGELOG.md` for the full history v1.0 → v2.7.0
+- Version: 2.7.1 (build 19) — see `CHANGELOG.md` for the full history v1.0 → v2.7.1
 - `PrivacyInfo.xcprivacy` present (no tracking, no data collection,
   UserDefaults/CA92.1)
 - Export compliance pre-answered (`ITSAppUsesNonExemptEncryption = NO`)
