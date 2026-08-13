@@ -42,9 +42,21 @@ final class WalletEngine {
         context.evaluateScript("var window = this; var self = this;")
 
         // secure randomness from the OS (SecRandomCopyBytes), bridged into JS
+        // This is the ONLY entropy source in the app: it backs crypto.getRandomValues
+        // in JSC, and therefore entropyToMnemonic() and PrivateKey.fromRandom().
+        //
+        // The status was previously discarded with `_ =`. On failure `bytes` stays
+        // all-zero and the user silently receives the all-zero seed — the wallet
+        // whose mnemonic is "abandon abandon ... about" and whose keys are public.
+        // Silent, catastrophic, irreversible.
+        //
+        // Crashing is the only acceptable behaviour here. A wallet that cannot get
+        // randomness must not produce key material.
         let secureRandomHex: @convention(block) (Int) -> String = { count in
             var bytes = [UInt8](repeating: 0, count: max(0, count))
-            _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+                fatalError("CSPRNG unavailable — refusing to generate key material")
+            }
             return bytes.map { String(format: "%02x", $0) }.joined()
         }
         context.setObject(secureRandomHex, forKeyedSubscript: "_secureRandomHex" as NSString)
