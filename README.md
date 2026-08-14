@@ -1,5 +1,11 @@
 # ORDnet Wallet — iOS app (v2.7.1)
 
+[![engine tests](https://github.com/ORDNET/ORDnet-iOS-Wallet/actions/workflows/test.yml/badge.svg)](https://github.com/ORDNET/ORDnet-iOS-Wallet/actions/workflows/test.yml)
+[![test count](https://img.shields.io/badge/engine_tests-69_passing-2b8a3e?style=flat-square)](#tests)
+[![platform](https://img.shields.io/badge/platform-iOS_17+_%C2%B7_SwiftUI-364fc7?style=flat-square)](#requirements)
+[![engine](https://img.shields.io/badge/crypto_engine-byte--identical_with_Android-5f3dc4?style=flat-square)](https://github.com/ORDNET/ORDnet-Android-Wallet)
+[![license](https://img.shields.io/badge/license-source--available-6a737d?style=flat-square)](LICENSE)
+
 Full native iOS version of the **ORDnet Web3 Browser / ORD/net Wallet**
 (originally the ORD/plug Chrome extension). Not a wrapper: the entire UI is
 SwiftUI; the crypto engine (`bsv.min.js` + `wallet-core.js`) runs invisibly
@@ -126,8 +132,14 @@ node Tests/engine-tests.mjs
 
 ## Tests
 
-`Tests/engine-tests.mjs` runs the full crypto-engine suite (69 tests) on plain
-Node. `Tests/brc100-detect-test.mjs` additionally requires `npm i @bsv/sdk`.
+```bash
+node Tests/engine-tests.mjs
+# -> 69 passed, 0 failed
+```
+
+The full crypto-engine suite on plain Node — the same vectors the Android
+app runs, against byte-identical engine files. `Tests/brc100-detect-test.mjs`
+additionally requires `npm i @bsv/sdk`.
 
 ## License
 
